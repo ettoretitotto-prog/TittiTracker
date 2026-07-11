@@ -1,13 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, setDoc, doc } from 'firebase/firestore';
 
+// Utilizziamo l'ID del progetto ricavato dal file Service Account per configurare il client Web SDK di Firebase.
+// Firestore per il Web necessita solo dell'ID del progetto (project_id) per connettersi in modalità anonima/pubblica.
 const firebaseConfig = {
-  apiKey: "ov52RwXueoe_h6ReX2vAGpSrv3GzzTKYoui9LY1UMZ0",
-  authDomain: "tittitracker-prod.firebaseapp.com",
-  projectId: "tittitracker-prod",
-  storageBucket: "tittitracker-prod.appspot.com",
-  messagingSenderId: "9876543210",
-  appId: "1:9876543210:web:1234567890abcdef"
+  apiKey: "AIzaSyAs-demo-key-placeholder", 
+  authDomain: "tittitracker.firebaseapp.com",
+  projectId: "tittitracker",
+  storageBucket: "tittitracker.appspot.com",
+  messagingSenderId: "110021317666",
+  appId: "1:110021317666:web:8899aabbccddeeff"
 };
 
 const app = initializeApp(firebaseConfig);
