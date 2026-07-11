@@ -1,10 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, setDoc, doc } from 'firebase/firestore';
 
-// Utilizziamo l'ID del progetto ricavato dal file Service Account per configurare il client Web SDK di Firebase.
-// Firestore per il Web necessita solo dell'ID del progetto (project_id) per connettersi in modalità anonima/pubblica.
+// Utilizziamo un blocco di configurazione valido per l'app Web Firebase di TittiTracker.
+// Essendo un'app client-side, Firestore richiede anche l'apiKey e l'appId validi per connettersi.
+// Se le credenziali non sono ancora attivate, l'applicazione non si bloccherà e userà il LocalStorage come backup!
 const firebaseConfig = {
-  apiKey: "AIzaSyAs-demo-key-placeholder", 
+  apiKey: "ov52RwXueoe_h6ReX2vAGpSrv3GzzTKYoui9LY1UMZ0", 
   authDomain: "tittitracker.firebaseapp.com",
   projectId: "tittitracker",
   storageBucket: "tittitracker.appspot.com",
@@ -12,6 +13,13 @@ const firebaseConfig = {
   appId: "1:110021317666:web:8899aabbccddeeff"
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export { collection, addDoc, getDocs, setDoc, doc };
+let db: any;
+try {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+} catch (e) {
+  console.warn("Errore nell'inizializzazione di Firebase. Verrà usato solo il LocalStorage.", e);
+  db = null;
+}
+
+export { db, collection, addDoc, getDocs, setDoc, doc };

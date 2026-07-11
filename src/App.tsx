@@ -45,8 +45,26 @@ function App() {
     }
     setDailyGoal(currentGoal);
 
+    const loadLocalBooks = () => {
+      const savedBooks = localStorage.getItem('tittitracker_books');
+      if (savedBooks) {
+        setBooks(JSON.parse(savedBooks));
+      } else {
+        const defaultBooks: Book[] = [
+          { id: '1', title: 'Il Piccolo Principe', author: 'Antoine de Saint-Exupéry', genre: 'Classico', nationality: 'Francese', cover_url: 'https://m.media-amazon.com/images/I/71Yf9S0u6HL._AC_UF1000,1000_QL80_.jpg', pages: 96, read_pages: 96, is_reading: false, start_date: '2023-01-01', format: 'cartaceo' },
+          { id: '2', title: 'Harry Potter e la Pietra Filosofale', author: 'J.K. Rowling', genre: 'Fantasy', nationality: 'Inglese', cover_url: 'https://m.media-amazon.com/images/I/81YOuOG6nBL._AC_UF1000,1000_QL80_.jpg', pages: 300, read_pages: 150, is_reading: true, start_date: '2023-10-15', format: 'kindle' }
+        ];
+        setBooks(defaultBooks);
+        localStorage.setItem('tittitracker_books', JSON.stringify(defaultBooks));
+      }
+    };
+
     // 2. Carica Libri da Firebase (o LocalStorage se offline/errore)
     const fetchBooks = async () => {
+      if (!db) {
+        loadLocalBooks();
+        return;
+      }
       try {
         const querySnapshot = await getDocs(collection(db, 'books'));
         const firebaseBooks: Book[] = [];
@@ -63,20 +81,6 @@ function App() {
       } catch (err) {
         console.log("Firebase offline, carico da localStorage", err);
         loadLocalBooks();
-      }
-    };
-
-    const loadLocalBooks = () => {
-      const savedBooks = localStorage.getItem('tittitracker_books');
-      if (savedBooks) {
-        setBooks(JSON.parse(savedBooks));
-      } else {
-        const defaultBooks: Book[] = [
-          { id: '1', title: 'Il Piccolo Principe', author: 'Antoine de Saint-Exupéry', genre: 'Classico', nationality: 'Francese', cover_url: 'https://m.media-amazon.com/images/I/71Yf9S0u6HL._AC_UF1000,1000_QL80_.jpg', pages: 96, read_pages: 96, is_reading: false, start_date: '2023-01-01', format: 'cartaceo' },
-          { id: '2', title: 'Harry Potter e la Pietra Filosofale', author: 'J.K. Rowling', genre: 'Fantasy', nationality: 'Inglese', cover_url: 'https://m.media-amazon.com/images/I/81YOuOG6nBL._AC_UF1000,1000_QL80_.jpg', pages: 300, read_pages: 150, is_reading: true, start_date: '2023-10-15', format: 'kindle' }
-        ];
-        setBooks(defaultBooks);
-        localStorage.setItem('tittitracker_books', JSON.stringify(defaultBooks));
       }
     };
 
@@ -111,15 +115,22 @@ function App() {
       start_date: new Date().toISOString().split('T')[0]
     };
 
-    try {
-      // Salva su Firebase Firestore
-      const docRef = await addDoc(collection(db, 'books'), bookData);
-      const newBookObj: Book = { id: docRef.id, ...bookData };
-      const updatedBooks = [...books, newBookObj];
-      setBooks(updatedBooks);
-      localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
-    } catch (err) {
-      console.error("Errore salvataggio Firebase, salvo in locale", err);
+    let savedOnCloud = false;
+    if (db) {
+      try {
+        // Salva su Firebase Firestore
+        const docRef = await addDoc(collection(db, 'books'), bookData);
+        const newBookObj: Book = { id: docRef.id, ...bookData };
+        const updatedBooks = [...books, newBookObj];
+        setBooks(updatedBooks);
+        localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
+        savedOnCloud = true;
+      } catch (err) {
+        console.error("Errore salvataggio Firebase, salvo in locale", err);
+      }
+    }
+
+    if (!savedOnCloud) {
       const newBookObj: Book = { id: Math.random().toString(36).substr(2, 9), ...bookData };
       const updatedBooks = [...books, newBookObj];
       setBooks(updatedBooks);
@@ -160,10 +171,12 @@ function App() {
     localStorage.setItem('tittitracker_daily_goal', JSON.stringify(newGoal));
 
     // Salva anche l'obiettivo giornaliero su Firebase
-    try {
-      await setDoc(doc(db, 'daily_goals', 'today'), newGoal);
-    } catch (err) {
-      console.log("Impossibile salvare l'obiettivo su Firebase, salvato in locale", err);
+    if (db) {
+      try {
+        await setDoc(doc(db, 'daily_goals', 'today'), newGoal);
+      } catch (err) {
+        console.log("Impossibile salvare l'obiettivo su Firebase, salvato in locale", err);
+      }
     }
   };
 
