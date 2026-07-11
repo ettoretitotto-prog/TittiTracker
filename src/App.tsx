@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Book as BookIcon, BarChart, Trophy, X, Clock, Target } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { supabase } from './supabaseClient';
-import { Book, Challenge, BookFormat, DailyGoal } from './types';
+import type { Book, Challenge, BookFormat, DailyGoal } from './types';
+import { db, collection, addDoc, getDocs, setDoc, doc } from './firebase';
 import './App.css';
 
 const COLORS = ['#F8C8DC', '#C08081', '#FFD1DC', '#E0A0A0', '#B0C4DE', '#F0E68C'];
@@ -27,41 +27,105 @@ function App() {
   });
 
   useEffect(() => {
+    // 1. Carica/Inizializza Obiettivo Giornaliero
     const savedGoal = localStorage.getItem('tittitracker_daily_goal');
+    let currentGoal: DailyGoal = {
+      target_minutes: 30,
+      current_minutes: 0,
+      last_updated: new Date().toISOString().split('T')[0]
+    };
     if (savedGoal) {
       const parsed = JSON.parse(savedGoal);
       const today = new Date().toISOString().split('T')[0];
       if (parsed.last_updated !== today) {
-        setDailyGoal({ ...parsed, current_minutes: 0, last_updated: today });
+        currentGoal = { ...parsed, current_minutes: 0, last_updated: today };
       } else {
-        setDailyGoal(parsed);
+        currentGoal = parsed;
       }
     }
+    setDailyGoal(currentGoal);
 
-    // In a real app, we would fetch from Supabase here
-    const mockBooks: Book[] = [
-      { id: '1', title: 'Il Piccolo Principe', author: 'Antoine de Saint-Exupéry', genre: 'Classico', nationality: 'Francese', cover_url: 'https://m.media-amazon.com/images/I/71Yf9S0u6HL._AC_UF1000,1000_QL80_.jpg', pages: 96, read_pages: 96, is_reading: false, start_date: '2023-01-01', format: 'cartaceo' },
-      { id: '2', title: 'Harry Potter e la Pietra Filosofale', author: 'J.K. Rowling', genre: 'Fantasy', nationality: 'Inglese', cover_url: 'https://m.media-amazon.com/images/I/81YOuOG6nBL._AC_UF1000,1000_QL80_.jpg', pages: 300, read_pages: 150, is_reading: true, start_date: '2023-10-15', format: 'kindle' }
-    ];
-    setBooks(mockBooks);
+    // 2. Carica Libri da Firebase (o LocalStorage se offline/errore)
+    const fetchBooks = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'books'));
+        const firebaseBooks: Book[] = [];
+        querySnapshot.forEach((docSnap) => {
+          firebaseBooks.push({ id: docSnap.id, ...docSnap.data() } as Book);
+        });
 
-    const mockChallenges: Challenge[] = [
-      { id: '1', goal: 'Leggi 20 minuti al giorno', target_value: 7, current_value: 5, unit: 'minuti', reward: '🌟 Super Lettore', is_completed: false },
-      { id: '2', goal: 'Completa 5 libri', target_value: 5, current_value: 2, unit: 'libri', reward: '📚 Bibliofilo', is_completed: false }
-    ];
-    setChallenges(mockChallenges);
+        if (firebaseBooks.length > 0) {
+          setBooks(firebaseBooks);
+          localStorage.setItem('tittitracker_books', JSON.stringify(firebaseBooks));
+        } else {
+          loadLocalBooks();
+        }
+      } catch (err) {
+        console.log("Firebase offline, carico da localStorage", err);
+        loadLocalBooks();
+      }
+    };
+
+    const loadLocalBooks = () => {
+      const savedBooks = localStorage.getItem('tittitracker_books');
+      if (savedBooks) {
+        setBooks(JSON.parse(savedBooks));
+      } else {
+        const defaultBooks: Book[] = [
+          { id: '1', title: 'Il Piccolo Principe', author: 'Antoine de Saint-Exupéry', genre: 'Classico', nationality: 'Francese', cover_url: 'https://m.media-amazon.com/images/I/71Yf9S0u6HL._AC_UF1000,1000_QL80_.jpg', pages: 96, read_pages: 96, is_reading: false, start_date: '2023-01-01', format: 'cartaceo' },
+          { id: '2', title: 'Harry Potter e la Pietra Filosofale', author: 'J.K. Rowling', genre: 'Fantasy', nationality: 'Inglese', cover_url: 'https://m.media-amazon.com/images/I/81YOuOG6nBL._AC_UF1000,1000_QL80_.jpg', pages: 300, read_pages: 150, is_reading: true, start_date: '2023-10-15', format: 'kindle' }
+        ];
+        setBooks(defaultBooks);
+        localStorage.setItem('tittitracker_books', JSON.stringify(defaultBooks));
+      }
+    };
+
+    // 3. Carica Sfide
+    const savedChallenges = localStorage.getItem('tittitracker_challenges');
+    if (savedChallenges) {
+      setChallenges(JSON.parse(savedChallenges));
+    } else {
+      const initialChallenges: Challenge[] = [
+        { id: '1', goal: 'Leggi 20 minuti al giorno', target_value: 7, current_value: 0, unit: 'minuti', reward: '🌟 Super Lettore', is_completed: false },
+        { id: '2', goal: 'Completa 5 libri', target_value: 5, current_value: 0, unit: 'libri', reward: '📚 Bibliofilo', is_completed: false }
+      ];
+      setChallenges(initialChallenges);
+      localStorage.setItem('tittitracker_challenges', JSON.stringify(initialChallenges));
+    }
+
+    fetchBooks();
   }, []);
 
-  const handleAddBook = (e: React.FormEvent) => {
+  const handleAddBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    const book: Book = {
-      ...newBook,
-      id: Math.random().toString(36).substr(2, 9),
+    const bookData = {
+      title: newBook.title || '',
+      author: newBook.author || '',
+      genre: newBook.genre || '',
+      nationality: newBook.nationality || '',
+      pages: newBook.pages || 0,
+      format: newBook.format || 'cartaceo',
+      cover_url: newBook.cover_url || 'https://via.placeholder.com/120x180?text=Copertina',
       read_pages: 0,
       is_reading: true,
       start_date: new Date().toISOString().split('T')[0]
-    } as Book;
-    setBooks([...books, book]);
+    };
+
+    try {
+      // Salva su Firebase Firestore
+      const docRef = await addDoc(collection(db, 'books'), bookData);
+      const newBookObj: Book = { id: docRef.id, ...bookData };
+      const updatedBooks = [...books, newBookObj];
+      setBooks(updatedBooks);
+      localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
+    } catch (err) {
+      console.error("Errore salvataggio Firebase, salvo in locale", err);
+      const newBookObj: Book = { id: Math.random().toString(36).substr(2, 9), ...bookData };
+      const updatedBooks = [...books, newBookObj];
+      setBooks(updatedBooks);
+      localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
+    }
+
     setIsModalOpen(false);
     setNewBook({
       title: '',
@@ -90,17 +154,24 @@ function App() {
     return Object.keys(data).map(key => ({ name: key, value: data[key] }));
   };
 
-  const updateDailyGoal = (updates: Partial<DailyGoal>) => {
+  const updateDailyGoal = async (updates: Partial<DailyGoal>) => {
     const newGoal = { ...dailyGoal, ...updates };
     setDailyGoal(newGoal);
     localStorage.setItem('tittitracker_daily_goal', JSON.stringify(newGoal));
+
+    // Salva anche l'obiettivo giornaliero su Firebase
+    try {
+      await setDoc(doc(db, 'daily_goals', 'today'), newGoal);
+    } catch (err) {
+      console.log("Impossibile salvare l'obiettivo su Firebase, salvato in locale", err);
+    }
   };
 
   return (
     <div className="app-container">
       <header>
         <h1>TittiTracker 🌸</h1>
-        <p>Il tuo angolo di lettura cute & minimal</p>
+        <p>Il tuo angolo di lettura cute & minimal (Online Cloud Sync ☁️)</p>
         <button className="btn" onClick={() => setIsModalOpen(true)}>
           <Plus size={20} /> Aggiungi Libro
         </button>
