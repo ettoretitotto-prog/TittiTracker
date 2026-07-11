@@ -26,65 +26,27 @@ function App() {
     cover_url: 'https://via.placeholder.com/120x180?text=Copertina'
   });
 
+  // Caricamento iniziale immediato da LocalStorage, poi Firebase in background
   useEffect(() => {
-    // 1. Carica/Inizializza Obiettivo Giornaliero
+    // 1. Carica Obiettivo Giornaliero
     const savedGoal = localStorage.getItem('tittitracker_daily_goal');
-    let currentGoal: DailyGoal = {
-      target_minutes: 30,
-      current_minutes: 0,
-      last_updated: new Date().toISOString().split('T')[0]
-    };
+    const today = new Date().toISOString().split('T')[0];
     if (savedGoal) {
       const parsed = JSON.parse(savedGoal);
-      const today = new Date().toISOString().split('T')[0];
       if (parsed.last_updated !== today) {
-        currentGoal = { ...parsed, current_minutes: 0, last_updated: today };
+        setDailyGoal({ ...parsed, current_minutes: 0, last_updated: today });
       } else {
-        currentGoal = parsed;
+        setDailyGoal(parsed);
       }
     }
-    setDailyGoal(currentGoal);
 
-    const loadLocalBooks = () => {
-      const savedBooks = localStorage.getItem('tittitracker_books');
-      if (savedBooks) {
-        setBooks(JSON.parse(savedBooks));
-      } else {
-        const defaultBooks: Book[] = [
-          { id: '1', title: 'Il Piccolo Principe', author: 'Antoine de Saint-Exupéry', genre: 'Classico', nationality: 'Francese', cover_url: 'https://m.media-amazon.com/images/I/71Yf9S0u6HL._AC_UF1000,1000_QL80_.jpg', pages: 96, read_pages: 96, is_reading: false, start_date: '2023-01-01', format: 'cartaceo' },
-          { id: '2', title: 'Harry Potter e la Pietra Filosofale', author: 'J.K. Rowling', genre: 'Fantasy', nationality: 'Inglese', cover_url: 'https://m.media-amazon.com/images/I/81YOuOG6nBL._AC_UF1000,1000_QL80_.jpg', pages: 300, read_pages: 150, is_reading: true, start_date: '2023-10-15', format: 'kindle' }
-        ];
-        setBooks(defaultBooks);
-        localStorage.setItem('tittitracker_books', JSON.stringify(defaultBooks));
-      }
-    };
+    // 2. Carica Libri Immediatamente da LocalStorage
+    const savedBooks = localStorage.getItem('tittitracker_books');
+    if (savedBooks) {
+      setBooks(JSON.parse(savedBooks));
+    }
 
-    // 2. Carica Libri da Firebase (o LocalStorage se offline/errore)
-    const fetchBooks = async () => {
-      if (!db) {
-        loadLocalBooks();
-        return;
-      }
-      try {
-        const querySnapshot = await getDocs(collection(db, 'books'));
-        const firebaseBooks: Book[] = [];
-        querySnapshot.forEach((docSnap) => {
-          firebaseBooks.push({ id: docSnap.id, ...docSnap.data() } as Book);
-        });
-
-        if (firebaseBooks.length > 0) {
-          setBooks(firebaseBooks);
-          localStorage.setItem('tittitracker_books', JSON.stringify(firebaseBooks));
-        } else {
-          loadLocalBooks();
-        }
-      } catch (err) {
-        console.log("Firebase offline, carico da localStorage", err);
-        loadLocalBooks();
-      }
-    };
-
-    // 3. Carica Sfide
+    // 3. Carica Sfide Immediatamente da LocalStorage
     const savedChallenges = localStorage.getItem('tittitracker_challenges');
     if (savedChallenges) {
       setChallenges(JSON.parse(savedChallenges));
@@ -94,14 +56,32 @@ function App() {
         { id: '2', goal: 'Completa 5 libri', target_value: 5, current_value: 0, unit: 'libri', reward: '📚 Bibliofilo', is_completed: false }
       ];
       setChallenges(initialChallenges);
-      localStorage.setItem('tittitracker_challenges', JSON.stringify(initialChallenges));
     }
 
-    fetchBooks();
+    // 4. Sincronizzazione Silenziosa da Firebase
+    const syncFromFirebase = async () => {
+      if (!db) return;
+      try {
+        const querySnapshot = await getDocs(collection(db, 'books'));
+        const firebaseBooks: Book[] = [];
+        querySnapshot.forEach((docSnap) => {
+          firebaseBooks.push({ id: docSnap.id, ...docSnap.data() } as Book);
+        });
+        if (firebaseBooks.length > 0) {
+          setBooks(firebaseBooks);
+          localStorage.setItem('tittitracker_books', JSON.stringify(firebaseBooks));
+        }
+      } catch (err) {
+        console.log("Sincronizzazione Firebase silente fallita", err);
+      }
+    };
+    syncFromFirebase();
   }, []);
 
   const handleAddBook = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Crea l'oggetto libro immediatamente
     const bookData = {
       title: newBook.title || '',
       author: newBook.author || '',
@@ -115,44 +95,38 @@ function App() {
       start_date: new Date().toISOString().split('T')[0]
     };
 
-    let savedOnCloud = false;
-    if (db) {
-      try {
-        // Salva su Firebase Firestore
-        const docRef = await addDoc(collection(db, 'books'), bookData);
-        const newBookObj: Book = { id: docRef.id, ...bookData };
-        const updatedBooks = [...books, newBookObj];
-        setBooks(updatedBooks);
-        localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
-        savedOnCloud = true;
-      } catch (err) {
-        console.error("Errore salvataggio Firebase, salvo in locale", err);
-      }
-    }
+    // ID temporaneo per UI immediata
+    const tempId = Math.random().toString(36).substr(2, 9);
+    const newBookObj: Book = { id: tempId, ...bookData };
 
-    if (!savedOnCloud) {
-      const newBookObj: Book = { id: Math.random().toString(36).substr(2, 9), ...bookData };
-      const updatedBooks = [...books, newBookObj];
-      setBooks(updatedBooks);
-      localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
-    }
-
+    // AGGIORNAMENTO UI IMMEDIATO (Ottimistico)
+    const updatedBooks = [...books, newBookObj];
+    setBooks(updatedBooks);
+    localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
+    
+    // CHIUDI MODALE IMMEDIATAMENTE
     setIsModalOpen(false);
     setNewBook({
-      title: '',
-      author: '',
-      genre: '',
-      nationality: '',
-      pages: 0,
-      format: 'cartaceo',
+      title: '', author: '', genre: '', nationality: '',
+      pages: 0, format: 'cartaceo',
       cover_url: 'https://via.placeholder.com/120x180?text=Copertina'
     });
+
+    // SALVATAGGIO IN BACKGROUND SU FIREBASE
+    if (db) {
+      try {
+        await addDoc(collection(db, 'books'), bookData);
+        console.log("Sincronizzazione cloud completata in background");
+      } catch (err) {
+        console.error("Errore salvataggio cloud silente", err);
+      }
+    }
   };
 
   const getGenreData = () => {
     const data: Record<string, number> = {};
     books.forEach(b => {
-      data[b.genre] = (data[b.genre] || 0) + 1;
+      if (b.genre) data[b.genre] = (data[b.genre] || 0) + 1;
     });
     return Object.keys(data).map(key => ({ name: key, value: data[key] }));
   };
@@ -160,7 +134,7 @@ function App() {
   const getFormatData = () => {
     const data: Record<string, number> = {};
     books.forEach(b => {
-      data[b.format] = (data[b.format] || 0) + 1;
+      if (b.format) data[b.format] = (data[b.format] || 0) + 1;
     });
     return Object.keys(data).map(key => ({ name: key, value: data[key] }));
   };
@@ -170,12 +144,12 @@ function App() {
     setDailyGoal(newGoal);
     localStorage.setItem('tittitracker_daily_goal', JSON.stringify(newGoal));
 
-    // Salva anche l'obiettivo giornaliero su Firebase
+    // Sincronizzazione silente
     if (db) {
       try {
         await setDoc(doc(db, 'daily_goals', 'today'), newGoal);
       } catch (err) {
-        console.log("Impossibile salvare l'obiettivo su Firebase, salvato in locale", err);
+        console.log("Errore sincronizzazione goal silente", err);
       }
     }
   };
@@ -184,7 +158,7 @@ function App() {
     <div className="app-container">
       <header>
         <h1>TittiTracker 🌸</h1>
-        <p>Il tuo angolo di lettura cute & minimal (Online Cloud Sync ☁️)</p>
+        <p>Il tuo angolo di lettura cute & minimal</p>
         <button className="btn" onClick={() => setIsModalOpen(true)}>
           <Plus size={20} /> Aggiungi Libro
         </button>
@@ -194,6 +168,7 @@ function App() {
         <h2>Libreria Virtuale 📚</h2>
         <div className="shelf-container">
           <div className="shelf">
+            {books.length === 0 && <p style={{opacity: 0.5}}>La tua libreria è vuota. Aggiungi il tuo primo libro! ✨</p>}
             {books.map(book => (
               <div key={book.id} className="book-card" title={book.title}>
                 <img src={book.cover_url} alt={book.title} className="book-cover" />
@@ -232,7 +207,7 @@ function App() {
               <div 
                 className="progress-fill" 
                 style={{ 
-                  width: `${Math.min(100, (dailyGoal.current_minutes / dailyGoal.target_minutes) * 100)}%`,
+                  width: `${Math.min(100, (dailyGoal.current_minutes / (dailyGoal.target_minutes || 1)) * 100)}%`,
                   backgroundColor: dailyGoal.current_minutes >= dailyGoal.target_minutes ? '#4caf50' : 'var(--pastel-pink)'
                 }}
               ></div>
@@ -292,7 +267,7 @@ function App() {
                 <div className="progress-bar">
                   <div 
                     className="progress-fill" 
-                    style={{ width: `${(challenge.current_value / challenge.target_value) * 100}%` }}
+                    style={{ width: `${(challenge.current_value / (challenge.target_value || 1)) * 100}%` }}
                   ></div>
                 </div>
                 <small>Premio: {challenge.reward}</small>
