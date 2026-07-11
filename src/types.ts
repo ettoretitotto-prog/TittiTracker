@@ -23,3 +23,9 @@ export interface Challenge {
   reward: string;
   is_completed: boolean;
 }
+
+export interface DailyGoal {
+  target_minutes: number;
+  current_minutes: number;
+  last_updated: string;
+}

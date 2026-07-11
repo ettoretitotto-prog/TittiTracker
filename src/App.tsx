@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Book as BookIcon, BarChart, Trophy, X } from 'lucide-react';
+import { Plus, Book as BookIcon, BarChart, Trophy, X, Clock, Target } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { supabase } from './supabaseClient';
-import { Book, Challenge, BookFormat } from './types';
+import { Book, Challenge, BookFormat, DailyGoal } from './types';
 import './App.css';
 
 const COLORS = ['#F8C8DC', '#C08081', '#FFD1DC', '#E0A0A0', '#B0C4DE', '#F0E68C'];
@@ -10,6 +10,11 @@ const COLORS = ['#F8C8DC', '#C08081', '#FFD1DC', '#E0A0A0', '#B0C4DE', '#F0E68C'
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [dailyGoal, setDailyGoal] = useState<DailyGoal>({
+    target_minutes: 30,
+    current_minutes: 0,
+    last_updated: new Date().toISOString().split('T')[0]
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBook, setNewBook] = useState<Partial<Book>>({
     title: '',
@@ -22,8 +27,18 @@ function App() {
   });
 
   useEffect(() => {
+    const savedGoal = localStorage.getItem('tittitracker_daily_goal');
+    if (savedGoal) {
+      const parsed = JSON.parse(savedGoal);
+      const today = new Date().toISOString().split('T')[0];
+      if (parsed.last_updated !== today) {
+        setDailyGoal({ ...parsed, current_minutes: 0, last_updated: today });
+      } else {
+        setDailyGoal(parsed);
+      }
+    }
+
     // In a real app, we would fetch from Supabase here
-    // For this demo, we'll use some mock data if Supabase is not configured
     const mockBooks: Book[] = [
       { id: '1', title: 'Il Piccolo Principe', author: 'Antoine de Saint-Exupéry', genre: 'Classico', nationality: 'Francese', cover_url: 'https://m.media-amazon.com/images/I/71Yf9S0u6HL._AC_UF1000,1000_QL80_.jpg', pages: 96, read_pages: 96, is_reading: false, start_date: '2023-01-01', format: 'cartaceo' },
       { id: '2', title: 'Harry Potter e la Pietra Filosofale', author: 'J.K. Rowling', genre: 'Fantasy', nationality: 'Inglese', cover_url: 'https://m.media-amazon.com/images/I/81YOuOG6nBL._AC_UF1000,1000_QL80_.jpg', pages: 300, read_pages: 150, is_reading: true, start_date: '2023-10-15', format: 'kindle' }
@@ -75,6 +90,12 @@ function App() {
     return Object.keys(data).map(key => ({ name: key, value: data[key] }));
   };
 
+  const updateDailyGoal = (updates: Partial<DailyGoal>) => {
+    const newGoal = { ...dailyGoal, ...updates };
+    setDailyGoal(newGoal);
+    localStorage.setItem('tittitracker_daily_goal', JSON.stringify(newGoal));
+  };
+
   return (
     <div className="app-container">
       <header>
@@ -103,6 +124,44 @@ function App() {
       </section>
 
       <div className="stats-grid">
+        <section className="card">
+          <h3>Obiettivo Giornaliero 🎯</h3>
+          <div className="daily-goal-section">
+            <div className="form-group">
+              <label><Target size={16} /> Minuti obiettivo oggi</label>
+              <input 
+                type="number" 
+                value={dailyGoal.target_minutes} 
+                onChange={e => updateDailyGoal({ target_minutes: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+            <div className="form-group">
+              <label><Clock size={16} /> Minuti letti oggi</label>
+              <input 
+                type="number" 
+                value={dailyGoal.current_minutes} 
+                onChange={e => updateDailyGoal({ current_minutes: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+            
+            <div className="progress-bar" style={{ height: 20 }}>
+              <div 
+                className="progress-fill" 
+                style={{ 
+                  width: `${Math.min(100, (dailyGoal.current_minutes / dailyGoal.target_minutes) * 100)}%`,
+                  backgroundColor: dailyGoal.current_minutes >= dailyGoal.target_minutes ? '#4caf50' : 'var(--pastel-pink)'
+                }}
+              ></div>
+            </div>
+            
+            <div className={`goal-status ${dailyGoal.current_minutes >= dailyGoal.target_minutes ? 'goal-completed' : 'goal-pending'}`}>
+              {dailyGoal.current_minutes >= dailyGoal.target_minutes 
+                ? 'Obiettivo Completato! Bravissima! 🌸' 
+                : `Mancano ${Math.max(0, dailyGoal.target_minutes - dailyGoal.current_minutes)} minuti al tuo obiettivo! ✨`}
+            </div>
+          </div>
+        </section>
+
         <section className="card">
           <h3>Statistiche Generi 🥧</h3>
           <div style={{ height: 300 }}>

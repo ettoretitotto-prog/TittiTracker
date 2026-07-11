@@ -196,3 +196,27 @@ header h1 {
   max-height: 90vh;
   overflow-y: auto;
 }
+
+.daily-goal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.goal-status {
+  text-align: center;
+  padding: 10px;
+  border-radius: 15px;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.goal-completed {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.goal-pending {
+  background-color: #fff3e0;
+  color: #ef6c00;
+}
