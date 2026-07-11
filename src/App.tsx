@@ -26,7 +26,6 @@ function App() {
     cover_url: 'https://via.placeholder.com/120x180?text=Copertina'
   });
 
-  // Caricamento iniziale immediato da LocalStorage, poi Firebase in background
   useEffect(() => {
     // 1. Carica Obiettivo Giornaliero
     const savedGoal = localStorage.getItem('tittitracker_daily_goal');
@@ -40,13 +39,7 @@ function App() {
       }
     }
 
-    // 2. Carica Libri Immediatamente da LocalStorage
-    const savedBooks = localStorage.getItem('tittitracker_books');
-    if (savedBooks) {
-      setBooks(JSON.parse(savedBooks));
-    }
-
-    // 3. Carica Sfide Immediatamente da LocalStorage
+    // 2. Carica Sfide
     const savedChallenges = localStorage.getItem('tittitracker_challenges');
     if (savedChallenges) {
       setChallenges(JSON.parse(savedChallenges));
@@ -58,30 +51,36 @@ function App() {
       setChallenges(initialChallenges);
     }
 
-    // 4. Sincronizzazione Silenziosa da Firebase
-    const syncFromFirebase = async () => {
-      if (!db) return;
-      try {
-        const querySnapshot = await getDocs(collection(db, 'books'));
-        const firebaseBooks: Book[] = [];
-        querySnapshot.forEach((docSnap) => {
-          firebaseBooks.push({ id: docSnap.id, ...docSnap.data() } as Book);
-        });
-        if (firebaseBooks.length > 0) {
-          setBooks(firebaseBooks);
-          localStorage.setItem('tittitracker_books', JSON.stringify(firebaseBooks));
+    // 3. Carica Libri: PRIMA da Firebase (cloud), POI da LocalStorage come fallback
+    const loadBooks = async () => {
+      if (db) {
+        try {
+          const querySnapshot = await getDocs(collection(db, 'books'));
+          const firebaseBooks: Book[] = [];
+          querySnapshot.forEach((docSnap) => {
+            firebaseBooks.push({ id: docSnap.id, ...docSnap.data() } as Book);
+          });
+          if (firebaseBooks.length > 0) {
+            setBooks(firebaseBooks);
+            localStorage.setItem('tittitracker_books', JSON.stringify(firebaseBooks));
+            return; // Firebase ha funzionato, esci
+          }
+        } catch (err) {
+          console.log("Firebase non raggiungibile, provo da locale", err);
         }
-      } catch (err) {
-        console.log("Sincronizzazione Firebase silente fallita", err);
+      }
+      // Fallback: carica da LocalStorage
+      const savedBooks = localStorage.getItem('tittitracker_books');
+      if (savedBooks) {
+        setBooks(JSON.parse(savedBooks));
       }
     };
-    syncFromFirebase();
+    loadBooks();
   }, []);
 
   const handleAddBook = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Crea l'oggetto libro immediatamente
     const bookData = {
       title: newBook.title || '',
       author: newBook.author || '',
@@ -95,16 +94,7 @@ function App() {
       start_date: new Date().toISOString().split('T')[0]
     };
 
-    // ID temporaneo per UI immediata
-    const tempId = Math.random().toString(36).substr(2, 9);
-    const newBookObj: Book = { id: tempId, ...bookData };
-
-    // AGGIORNAMENTO UI IMMEDIATO (Ottimistico)
-    const updatedBooks = [...books, newBookObj];
-    setBooks(updatedBooks);
-    localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
-    
-    // CHIUDI MODALE IMMEDIATAMENTE
+    // Chiudi subito il modale
     setIsModalOpen(false);
     setNewBook({
       title: '', author: '', genre: '', nationality: '',
@@ -112,15 +102,26 @@ function App() {
       cover_url: 'https://via.placeholder.com/120x180?text=Copertina'
     });
 
-    // SALVATAGGIO IN BACKGROUND SU FIREBASE
+    // Salva su Firebase (cloud)
     if (db) {
       try {
-        await addDoc(collection(db, 'books'), bookData);
-        console.log("Sincronizzazione cloud completata in background");
+        const docRef = await addDoc(collection(db, 'books'), bookData);
+        const newBookObj: Book = { id: docRef.id, ...bookData };
+        const updatedBooks = [...books, newBookObj];
+        setBooks(updatedBooks);
+        localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
+        return;
       } catch (err) {
-        console.error("Errore salvataggio cloud silente", err);
+        console.error("Firebase non disponibile, salvo in locale", err);
       }
     }
+
+    // Fallback: salva solo in locale
+    const tempId = Math.random().toString(36).substr(2, 9);
+    const newBookObj: Book = { id: tempId, ...bookData };
+    const updatedBooks = [...books, newBookObj];
+    setBooks(updatedBooks);
+    localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
   };
 
   const getGenreData = () => {
@@ -143,13 +144,11 @@ function App() {
     const newGoal = { ...dailyGoal, ...updates };
     setDailyGoal(newGoal);
     localStorage.setItem('tittitracker_daily_goal', JSON.stringify(newGoal));
-
-    // Sincronizzazione silente
     if (db) {
       try {
         await setDoc(doc(db, 'daily_goals', 'today'), newGoal);
       } catch (err) {
-        console.log("Errore sincronizzazione goal silente", err);
+        console.log("Errore sincronizzazione goal", err);
       }
     }
   };
