@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Book as BookIcon, BarChart, Trophy, X, Clock, Target } from 'lucide-react';
+import { Plus, Book as BookIcon, BarChart, Trophy, X, Clock, Target, Trash2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import type { Book, Challenge, BookFormat, DailyGoal } from './types';
-import { db, collection, addDoc, getDocs, setDoc, doc } from './firebase';
+import { db, collection, addDoc, getDocs, setDoc, doc, deleteDoc } from './firebase';
 import './App.css';
 
 const COLORS = ['#F8C8DC', '#C08081', '#FFD1DC', '#E0A0A0', '#B0C4DE', '#F0E68C'];
@@ -16,6 +16,7 @@ function App() {
     last_updated: new Date().toISOString().split('T')[0]
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [newBook, setNewBook] = useState<Partial<Book>>({
     title: '',
     author: '',
@@ -124,6 +125,23 @@ function App() {
     localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
   };
 
+  const handleDeleteBook = async (bookId: string) => {
+    // Elimina da Firebase se disponibile
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'books', bookId));
+      } catch (err) {
+        console.log("Firebase non disponibile per eliminazione", err);
+      }
+    }
+
+    // Aggiorna stato e localStorage
+    const updatedBooks = books.filter(b => b.id !== bookId);
+    setBooks(updatedBooks);
+    localStorage.setItem('tittitracker_books', JSON.stringify(updatedBooks));
+    setSelectedBook(null); // Chiudi il modale dettaglio
+  };
+
   const getGenreData = () => {
     const data: Record<string, number> = {};
     books.forEach(b => {
@@ -169,7 +187,7 @@ function App() {
           <div className="shelf">
             {books.length === 0 && <p style={{opacity: 0.5}}>La tua libreria è vuota. Aggiungi il tuo primo libro! ✨</p>}
             {books.map(book => (
-              <div key={book.id} className="book-card" title={book.title}>
+              <div key={book.id} className="book-card" title={book.title} onClick={() => setSelectedBook(book)}>
                 <img src={book.cover_url} alt={book.title} className="book-cover" />
                 <div className="book-info-mini">
                   <strong>{book.title}</strong>
@@ -318,6 +336,61 @@ function App() {
               </div>
               <button type="submit" className="btn" style={{ width: '100%', marginTop: 10 }}>Salva Libro</button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modale Dettaglio Libro */}
+      {selectedBook && (
+        <div className="modal-overlay" onClick={() => setSelectedBook(null)}>
+          <div className="modal-content book-detail-modal" onClick={e => e.stopPropagation()}>
+            <div className="book-detail-header">
+              <h2>{selectedBook.title}</h2>
+              <X className="btn-close" onClick={() => setSelectedBook(null)} style={{ cursor: 'pointer' }} />
+            </div>
+            
+            <div className="book-detail-body">
+              <div className="book-detail-cover">
+                <img src={selectedBook.cover_url} alt={selectedBook.title} />
+              </div>
+              
+              <div className="book-detail-info">
+                <div className="detail-row">
+                  <span className="detail-label">Autore</span>
+                  <span className="detail-value">{selectedBook.author}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Genere</span>
+                  <span className="detail-value">{selectedBook.genre}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Nazionalità</span>
+                  <span className="detail-value">{selectedBook.nationality || '—'}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Pagine</span>
+                  <span className="detail-value">{selectedBook.pages}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Formato</span>
+                  <span className={`format-tag format-${selectedBook.format}`}>{selectedBook.format}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Iniziato il</span>
+                  <span className="detail-value">{selectedBook.start_date}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Pagine Lette</span>
+                  <span className="detail-value">{selectedBook.read_pages} / {selectedBook.pages}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="book-detail-actions">
+              <button className="btn btn-delete" onClick={() => handleDeleteBook(selectedBook.id)}>
+                <Trash2 size={18} /> Elimina Libro
+              </button>
+            </div>
           </div>
         </div>
       )}
